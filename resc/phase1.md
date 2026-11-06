@@ -1,7 +1,4 @@
-Core concept for REACT
-- Virtual DOM
-- Diff 
-- Patch
+Phase 1. Virtual DOM + Diff + Patch
 
 
 브라우저의 DOM 정보를 읽어서 Virtual DOM 으로 변환하는 함수를 작성합니다.
@@ -29,3 +26,21 @@ c3. 변경된 부분만 "실제 영역" 에 렌더링합니다.
 c4. 새로 변경된 Virtual DOM 은 State History 에 저장합니다.
 
 뒤로가기, 앞으로가기 버튼을 눌러 state history 에 저장된 특정 Virtual DOM 으로 이동 가능하며 "실제 영역", "테스트 영역" 도 함께 변경되어야 합니다
+
+Phase 1 — 브라우저 / DOM / Diff 관련 중점 포인트
+
+- 브라우저에서 DOM 을 다루는 방법 (Document, Window)
+- 실제 DOM 의 변화를 감지 하기 위한 브라우저 API
+- 실제 DOM 이 느린 이유
+<br>-> Reflow / Repaint 관점
+
+- Virtual DOM
+<br>-> 구조
+<br>-> 필요한 이유
+
+- Diff 알고리즘
+<br>-> 동작 방식
+<br>-> 최소 변경을 찾기 위한 5가지 핵심 케이스
+<br>-> 실제 DOM 에 반영 방법
+
+- React 에서 실제 DOM 을 변경할 때, Virtual DOM 과 Diff 알고리즘의 동작 방식
