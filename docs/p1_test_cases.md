@@ -46,8 +46,28 @@
 - PRD의 `diff(currentVDOM, nextVDOM)`에서 `currentVDOM`은 위에서 조회한 `curVdom`으로 통일해야 한다.
 - VDOM 필드명 `tageName`은 `tagName`을 뜻하는지 확정한다. attributes 배열 원소의 구조도 정한다.
 - Diff 명령의 operation, 데이터, 대상 참조, 부모 참조, 삽입 기준 형제 참조 형식을 정한다.
-- 테스트 DOM과 기존 VDOM의 객체 매핑 방식, 새 노드와 이동한 노드의 식별 규칙을 정한다.
 - 초기 스냅샷 생성처럼 이전 VDOM이 없는 경우의 createSnapshot 호출 계약을 정한다.
+<br> -> 
+if history == NULL 
+return dom_initalizer()
 - 과거 스냅샷에 있는 실제 DOM 참조가 삭제·교체로 분리된 경우, 이력 복원 시 참조와 매핑을 어떻게 재연결할지 정한다.
+<br> ->  create, remove 만 역변환됨. (create <-> delete )
+어차피 이전 VDOM도 새로운 VNODE이기 때문에 create_element() 하면 됨. 
 - 변경 없는 Patch의 이력 추가 여부와 H05의 분기 이력 정책을 확정한다.
-- 주석 노드와 입력 요소의 value·checked 등 DOM 속성 외 상태를 지원 범위에 포함할지 정한다.
+<br> -> 아무것도 변화 없을때 set_history() 저장할거냐 (저장하지마)
+- 주석 노드는 제외하고, 입력·선택 상태는 아래 스키마에 따라 수집한다.
+
+```js
+const propertySchema = {
+  INPUT: ["value", "checked", "indeterminate"],
+  TEXTAREA: ["value"],
+  SELECT: ["value"],
+  OPTION: ["selected"]
+};
+```
+
+### 사용 맥락
+
+- `createSnapshot()`은 태그별 스키마에 지정된 현재 값을 읽어 VDOM의 `properties`에 저장한다.
+- `diff()`는 이전·다음 `properties`를 비교해 변경된 값을 `update` 명령에 담는다.
+- 렌더링·Patch·이력 복원 시 해당 값을 실제 DOM의 프로퍼티에 적용한다.
