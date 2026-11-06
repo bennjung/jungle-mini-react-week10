@@ -16,7 +16,8 @@ main.html
       └─ 앞으로 클릭 → handleHistoryMove(1)
 ```
 
-`init()` 안에서 영역 참조와 History를 만들고 이벤트 핸들러가 클로저로 접근한다. 별도 전역 `curVDOM`은 두지 않는다.
+`init()` 안에서 영역 참조와 History를 만들고 이벤트 핸들러가 클로저로 접근한다. 최초 initializeDOM()에서 default VDOM 생성 및 매핑.
+별도 전역 `curVDOM`은 두지 않는다.
 
 ## 2. 이벤트 핸들러
 
@@ -24,9 +25,9 @@ main.html
 
 ```js
 function handlePatch() {
-  const curVdom = saveHistory.get();
-  const nextVDOM = createSnapshot(testRoot, curVdom);
-  const changes = diff(curVdom, nextVDOM);
+  const curVDOM = saveHistory.get();
+  const nextVDOM = createSnapshot(testRoot, curVDOM);
+  const changes = diff(curVDOM, nextVDOM);
 
   if (changes.length === 0) return;
 
@@ -78,7 +79,7 @@ applyPatch(changes)
 ## 4. diff() → 변경 명령 배열
 
 ```text
-diff(curVdom, nextVDOM)
+diff(curVDOM, nextVDOM)
 ├─ compareNode(prev, next)
 │  ├─ 노드 종류·태그 변경 → replace
 │  ├─ 텍스트 변경 → update
@@ -100,8 +101,8 @@ Diff는 실제 DOM과 과거 스냅샷 데이터를 수정하지 않는다. attr
 ## 5. createSnapshot() → VDOM과 객체 매핑
 
 ```text
-createSnapshot(root, curVdom = null)
-├─ indexPreviousNodes(curVdom)          이전 testDom → 이전 VDOM의 WeakMap
+createSnapshot(root, curVDOM = null)
+├─ indexPreviousNodes(curVDOM)          이전 testDom → 이전 VDOM의 WeakMap
 └─ snapshotNode(domNode)
    ├─ 주석 노드 → 제외
    ├─ readNodeData()                   nodeType, tagName, nodeValue
