@@ -7,17 +7,18 @@
 `main.html`을 기준으로 상위 이벤트 흐름에서 Patch → Diff → VDOM 순서로 하위 역할을 설계한다.
 테스트 영역은 HTML 코드 편집기, 실제 영역은 렌더링 화면이다. 요구사항 원문의 “테스트 영역 렌더링”은 HTML 문자열 편집기로 해석한다. 아래 내용은 설계 명세이며 구현 코드는 아니다.
 요구사항 원문은 `resc/phase1.md`, 함수 흐름은 `p1_function_flow.md`, 검증 기준은 `p1_test_cases.md`를 따른다.
+구현 환경과 확정된 결정은 `p1_decisions.md`를, 함수·타입 인터페이스는 `p1_interfaces.md`를 따른다.
 
 합의한 참조 연결 시점은 다음과 같다.
 
 | 단계 | 이전 VDOM | 다음 VDOM |
 | --- | --- | --- |
-| Snapshot 종료 | 현재 실제 DOM 참조 유지 | 논리적 루트와 모든 하위 노드의 dom이 null |
+| Snapshot 종료 | 현재 실제 DOM 참조 유지 | VRoot와 모든 VNode의 dom이 null |
 | Diff·명령 정렬 종료 | 현재 실제 DOM 참조 유지 | 참조 미연결 상태 유지 |
 | Patch 성공 | 변경 전 비교 기준 | 유지된 노드와 새 노드를 포함해 실제 DOM 참조 연결 완료 |
 | 현재 상태 지정·이력 저장 | 이전 상태 | 완성된 다음 VDOM을 현재 상태로 사용 |
 
-아래 내용은 호출 흐름을 설명한다. Patch에 이전·다음 VDOM과 명령을 전달하는 구체적인 인자 형식, 완성된 VDOM의 반환·갱신 방식은 아직 확정하지 않는다.
+아래 내용은 호출 흐름을 설명한다. Patch에 이전·다음 VDOM과 명령을 전달하는 구체적인 인자 형식, 완성된 VDOM의 반환·갱신 방식은 아직 확정하지 않는다. 유지 노드의 참조 연결 방식은 `p1_decisions.md`의 P1-PATCH-LINK-01을 따른다.
 
 ## 1. main.html → 진입점
 
@@ -36,6 +37,8 @@ main.html
 
 `init()` 안에서 편집기·실제 영역·History를 만들고 핸들러가 클로저로 접근한다. 별도 전역 `curVDOM`은 두지 않는다.
 초기화는 빈 VDOM과 샘플 VDOM을 비교하는 방식으로 통일한다. 빈 VDOM은 초기화의 비교 기준이며, 샘플이 반영된 상태를 첫 이력으로 저장한다.
+
+Phase 1 화면은 좌우 2분할이다. 왼쪽은 HTML 코드 편집기, 오른쪽은 실제 영역이며 실제 영역 컨테이너는 `#actual`이다. Patch·뒤로·앞으로 버튼은 하단 푸터에 둔다. `init()`은 `createEmptyVDOM(#actual)`로 초기 `VRoot.dom`을 연결한다.
 
 ## 2. 이벤트 핸들러
 
@@ -100,7 +103,7 @@ applyPatch()                            이전·다음 VDOM과 변경 명령을 
 └─ 다음 VDOM 전체에 실제 DOM 참조 연결 완료
    ├─ 유지·수정·이동 노드 → 이전 VDOM에서 찾은 실제 DOM 연결
    ├─ 삽입·교체 노드 → 생성된 실제 DOM 연결
-   └─ 논리적 루트 → 실제 영역 컨테이너 연결
+   └─ VRoot → 실제 영역 컨테이너 연결
 ```
 
 명령은 VDOM 객체를 직접 참조한다. Patch 시작 시 기존 실제 DOM은 이전 VDOM의 `dom`으로 찾으며, 다음 VDOM의 `dom`은 모두 null이다. 부모·기준 형제의 실제 DOM 참조도 Patch에서 해석한다. 이 참조는 편집기나 파싱용 임시 DOM을 가리키지 않는다.
@@ -108,7 +111,7 @@ applyPatch()                            이전·다음 VDOM과 변경 명령을 
 
 기존 실제 DOM과 다음 VDOM의 연결은 Patch에서 수행한다. `renderNode()`는 새 실제 DOM을 생성할 때 해당 다음 VDOM 노드에 연결한다. 기존 노드를 유지·수정·이동하는 경우에도 다음 VDOM에 해당 실제 DOM 참조를 연결한다.
 
-변경 명령이 없는 노드와 그 하위 트리도 연결 대상이다. Patch 성공 시 논리적 루트를 포함한 다음 VDOM 전체가 실제 DOM을 가리켜야 한다. 참조를 연결하려고 변경 없는 실제 DOM을 재생성하지 않는다.
+변경 명령이 없는 노드와 그 하위 트리도 연결 대상이다. Patch 성공 시 `VRoot`를 포함한 다음 VDOM 전체가 실제 DOM을 가리켜야 한다. 참조를 연결하려고 변경 없는 실제 DOM을 재생성하지 않는다.
 
 applyPatch 실행 중 예외가 발생하면 applyPatch 자체는 롤백하지 않는다. 호출자인 handlePatch가 현재 이력 데이터로 실제 영역만 복원하고, 다음 VDOM은 현재 상태로 사용하지 않는다.
 
@@ -160,7 +163,7 @@ readEditorHTML()                        편집기의 HTML 문자열 읽기
 
 `parseHTML()`은 `<template>` 같은 브라우저 파싱 기능을 사용한다. 임시 DOM은 VDOM 데이터 추출용이며 실제 화면에 직접 삽입하지 않는다. 브라우저가 보정한 HTML 구조를 기준으로 스냅샷을 만든다.
 
-VDOM 데이터는 `nodeType`, `tagName`, `attributes`, `nodeValue`, `childNodes`, `properties`로 구성하며 실제 DOM 연결용 필드는 `dom`이다. Snapshot에서는 논리적 루트와 모든 하위 노드의 `dom`을 null로 둔다. 이전 VDOM이나 임시 DOM 참조를 실제 DOM 참조로 연결하지 않는다. 요소의 `key` attribute를 식별자로 사용하고, key가 없는 요소와 텍스트 노드는 부모 안의 자식 순서로 대응한다.
+VDOM은 `VRoot`와 `VNode`로 구성한다. `VRoot`는 `childNodes`와 `dom`만 가지며, `VNode`는 `nodeType`, `tagName`, `attributes`, `nodeValue`, `childNodes`, `properties`, `dom`을 가진다. Snapshot에서는 `VRoot`와 모든 `VNode`의 `dom`을 null로 둔다. 이전 VDOM이나 임시 DOM 참조를 실제 DOM 참조로 연결하지 않는다. 요소의 `key` attribute는 `attributes`에서 제거하지 않고 실제 DOM에도 렌더링하며, 같은 attribute 값을 식별자로 사용한다. key가 없는 요소와 텍스트 노드는 부모 안의 자식 순서로 대응한다.
 
 ### 입력·선택 상태
 
@@ -172,7 +175,7 @@ VDOM 데이터는 `nodeType`, `tagName`, `attributes`, `nodeValue`, `childNodes`
 
 ```text
 initializeDOM(sampleHTML)
-├─ createEmptyVDOM(actualRoot)          자식 없는 논리적 루트, 실제 컨테이너 연결
+├─ createEmptyVDOM(actualRoot)          자식 없는 VRoot, 실제 컨테이너 연결
 ├─ parseHTML(sampleHTML)                샘플 코드 → 임시 DOM
 ├─ createSnapshot(parsedRoot)           샘플 VDOM 전체의 dom은 null
 ├─ diff(emptyVDOM, sampleVDOM)
@@ -181,12 +184,12 @@ initializeDOM(sampleHTML)
 └─ saveHistory.set(sampleVDOM, sampleHTML)
 
 restoreSnapshot(entry, actualRoot, options = {})
-├─ cloneSnapshotData(entry.vdom)        데이터 복사, dom 참조 초기화
-├─ renderChildren(vdom, actualRoot)     실제 영역 내용 교체·dom 재연결
+├─ root = cloneSnapshotData(entry.vdom)  데이터 복사, dom 참조 초기화
+├─ renderChildren(root, actualRoot)      실제 영역 내용 교체·dom 재연결
 ├─ if (options.restoreEditor !== false) writeEditorHTML(entry.html)
-└─ return vdom
+└─ return root
 
-renderChildren(vdom, actualRoot)
+renderChildren(root, actualRoot)
 ├─ 실제 영역 컨테이너 유지, 기존 자식 제거
 └─ 각 자식 renderNode() 후 순서대로 삽입
 
@@ -200,10 +203,10 @@ renderNode(vnode)
 
 `restoreSnapshot()`의 `restoreEditor` 기본값은 true다. applyPatch 실패 복구는 false로 호출해 실제 영역만 복원하고 편집기 HTML은 유지한다.
 
-초기화도 Snapshot·Diff 종료까지 샘플 VDOM의 모든 `dom`이 null이고, Patch 성공 후에만 전체 실제 DOM 참조를 가진다. 빈 이전 VDOM의 논리적 루트는 작업 대상인 실제 컨테이너를 가리킨다.
+초기화도 Snapshot·Diff 종료까지 샘플 `VRoot`와 모든 `VNode`의 `dom`이 null이고, Patch 성공 후에만 전체 실제 DOM 참조를 가진다. 빈 이전 VDOM의 `VRoot`는 작업 대상인 실제 컨테이너를 가리킨다.
 
 초기 실제 영역은 비어 있다는 전제다. 이미 샘플 DOM이 있는 페이지에서는 이를 빈 루트로 간주하면 중복 생성되므로 초기화 경로를 혼용하지 않는다.
-최상위 VDOM은 실제 영역 컨테이너에 대응하는 논리적 루트이며, 컨테이너 자체의 태그·속성은 Diff하지 않는다. 이력 복원 시 논리적 루트의 `dom`도 현재 `actualRoot`로 연결한다.
+최상위 VDOM은 실제 영역 컨테이너에 대응하는 `VRoot`이며, 컨테이너 자체의 태그·속성은 Diff하지 않는다. 이력 복원 시 `VRoot.dom`도 현재 `actualRoot`로 연결한다.
 
 코드 편집기는 HTML 문자열을 표시한다. `renderChildren()`이나 `renderNode()`로 편집기 내부에 샘플 DOM을 만들지 않는다. 이력 복원은 실제 영역을 전체 렌더링하고 DOM 참조를 새로 연결한다.
 
@@ -241,15 +244,24 @@ applyPatch 실패 복구는 `peek(0)`으로 현재 이력 데이터를 읽고, `
 
 ### 9.1 VDOM
 
-| 필드 | 내용 |
+요소·텍스트 노드는 `VNode`, 실제 영역 컨테이너에 대응하는 논리적 루트는 `VRoot`로 분리한다.
+
+| VNode 필드 | 내용 |
 | --- | --- |
 | `nodeType` | 노드 종류 정수. 요소 1, 텍스트 3을 지원하고 주석 8은 제외 |
 | `tagName` | 요소 태그 이름. 텍스트 노드는 null |
 | `attributes` | `{ name, value }` 원소의 배열. 텍스트 노드는 빈 배열 |
 | `nodeValue` | 텍스트 노드의 문자열 값. 요소 노드는 null |
-| `childNodes` | 자식 VDOM 배열. 순서 보존 |
+| `childNodes` | 자식 `VNode` 배열. 순서 보존 |
 | `properties` | 스키마에 지정된 DOM 프로퍼티의 현재 값 객체 |
-| `dom` | 실제 DOM 객체 직접 참조. 다음 VDOM은 Snapshot·Diff 종료까지 모두 null이며 Patch 성공 후 전체 연결 |
+| `dom` | 실제 DOM 객체 직접 참조. 다음 VDOM의 `VNode`는 Snapshot·Diff 종료까지 모두 null이며 Patch 성공 후 전체 연결 |
+
+| VRoot 필드 | 내용 |
+| --- | --- |
+| `childNodes` | 실제 영역 컨테이너의 자식 `VNode` 배열. 순서 보존 |
+| `dom` | 실제 영역 컨테이너 참조. Snapshot에서는 null, Patch·초기화·이력 복원 후에는 `actualRoot` |
+
+`VRoot`는 컨테이너 자체의 태그·속성을 가지지 않으며 Diff 대상이 아니다.
 
 속성은 이름·값 인터페이스로 처리한다. 신규 HTML 속성이 추가되어도 Diff·Patch에 속성별 전용 로직을 추가하지 않는다.
 
@@ -266,14 +278,14 @@ const propertySchema = {
 - Diff는 `properties`의 변경값을 찾아 `update` 명령에 담는다.
 - 렌더링·Patch·이력 복원 시 해당 값을 실제 DOM 프로퍼티에 적용한다.
 
-요소의 `key` attribute를 식별자로 사용한다. key가 없는 요소와 텍스트 노드는 부모 안의 자식 순서로 대응한다. 편집기의 HTML 원문은 History의 html로 함께 저장하며 VDOM의 실제 DOM 참조와 구분한다.
+요소의 `key` attribute를 식별자로 사용한다. `key`는 `attributes`에서 제거하지 않고 실제 DOM에도 렌더링한다. key가 없는 요소와 텍스트 노드는 부모 안의 자식 순서로 대응한다. 편집기의 HTML 원문은 History의 html로 함께 저장하며 VDOM의 실제 DOM 참조와 구분한다.
 
 ### 9.2 Diff 명령
 
 `diff()`는 아래 명령들의 배열을 반환한다.
 예시의 `"<...>"`는 VDOM 객체 참조를 표시하는 자리표시자다. 실제 실행에서는 문자열이 아닌 객체 직접 참조를 사용한다. 기존 변경 대상은 이전 VDOM으로 찾고, 삽입·교체할 node는 다음 VDOM에 속한다. 다음 VDOM을 참조하는 parent·before의 실제 DOM 연결은 Patch에서 해석한다.
 
-변경 명령 배열과 별개로, Patch는 변경 없는 노드를 포함한 다음 VDOM 전체의 참조 연결을 완성해야 한다. 이를 위한 구체적인 인자·반환 형식은 미확정이다.
+변경 명령 배열과 별개로, Patch는 변경 없는 노드를 포함한 다음 VDOM 전체의 참조 연결을 완성해야 한다. 이를 위한 구체적인 인자·반환 형식은 미확정이며, `p1_decisions.md`의 P1-PATCH-LINK-01을 따른다.
 
 #### replace
 

@@ -1,18 +1,48 @@
-<div class=“sample” id=“sample-app”>
-    <h1>Mini React Test</h1>
-    <p>Virtual DOM Diff 테스트</p>
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Mini React — Virtual DOM + Diff + Patch</title>
+    <link rel="stylesheet" href="/src/styles/main.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <span class="brand">Mini React</span>
+      <span class="tagline">Virtual DOM · Diff · Patch</span>
+    </header>
 
-<section class=“profile”>
-    <h2>사용자 정보</h2>
-    <p>이름: 홍길동</p>
-    <p>나이: 25</p>
-</section>
+    <main class="workspace">
+      <section class="pane pane--editor" aria-labelledby="editor-heading">
+        <div class="pane__tabs">
+          <span class="pane__tab pane__tab--active" id="editor-heading">sample.html</span>
+        </div>
+        <textarea
+          id="editor"
+          class="editor"
+          spellcheck="false"
+          autocomplete="off"
+          aria-label="테스트 영역 — HTML 코드 편집기"
+        ></textarea>
+      </section>
 
-<ul>
-    <li>JavaScript</li>
-    <li>React</li>
-    <li>HTML</li>
-</ul>
+      <section class="pane pane--preview" aria-labelledby="preview-heading">
+        <div class="pane__tabs">
+          <span class="pane__tab pane__tab--active" id="preview-heading">실제 영역</span>
+        </div>
+        <div id="actual" class="preview" aria-label="실제 영역 — 렌더링 결과"></div>
+      </section>
+    </main>
 
-<button type=“button” disabled>PATCH</button>
-</div>
+    <footer class="footer">
+      <div class="footer__status" id="status" role="status" aria-live="polite"></div>
+      <div class="footer__actions">
+        <button type="button" id="back" class="btn">← 뒤로</button>
+        <button type="button" id="forward" class="btn">앞으로 →</button>
+        <button type="button" id="patch" class="btn btn--primary">Patch</button>
+      </div>
+    </footer>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
