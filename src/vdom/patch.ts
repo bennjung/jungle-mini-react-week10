@@ -9,7 +9,7 @@ import type {
 } from './types';
 
 /**
- * 정렬된 Diff 명령을 실제 DOM에 적용하고 다음 VDOM 전체의 dom 참조를 연결한다.
+ * 정렬된 Diff 명령을 실제 DOM에 적용하고, 다음 VDOM 전체의 dom 참조를 연결한다.
  * History 저장은 하지 않는다.
  */
 export function applyPatch(
@@ -20,13 +20,12 @@ export function applyPatch(
   const actualRoot = prevRoot.dom;
   if (!actualRoot) throw new Error('prevRoot.dom is not linked');
 
-  /* 매치정보로 dom연결 */
   linkMatchedDom(prevRoot, nextRoot);
 
-  /* 변경사항 적용 */
-  for (const change of changes) applyChange(change);
+  for (const change of changes) {
+    applyChange(change);
+  }
 
-  /* 검증함수 */
   assertAllLinked(nextRoot, actualRoot);
   return nextRoot;
 }
@@ -36,11 +35,13 @@ export function applyPatch(
  * 새 삽입·교체 노드는 renderNode가 연결할 때까지 null로 둔다.
  */
 export function linkMatchedDom(prev: VRoot, next: VRoot): void {
-  next.dom = prev.dom;
+  next.dom = requireElementDom(prev, 'link previous root');
   linkChildren(prev.childNodes, next.childNodes);
 }
 
-// VNode을 실제 DOM으로 만들고 vnode.dom과 하위 노드의 dom을 연결한다.
+/**
+ * VNode를 실제 DOM으로 만들고, vnode.dom과 하위 노드의 dom을 연결한다.
+ */
 export function renderNode(vnode: VNode): Node {
   if (vnode.nodeType === 3) {
     const dom = document.createTextNode(vnode.nodeValue ?? '');
@@ -48,11 +49,12 @@ export function renderNode(vnode: VNode): Node {
     return dom;
   }
 
-  if (vnode.tagName === null) {
+  const tagName = vnode.tagName;
+  if (tagName === null) {
     throw new Error('Element VNode must have tagName');
   }
 
-  const element = document.createElement(vnode.tagName);
+  const element = document.createElement(tagName);
   vnode.dom = element;
   applyAttributes(element, vnode.attributes);
 
@@ -64,54 +66,58 @@ export function renderNode(vnode: VNode): Node {
   return element;
 }
 
-// 실제 영역의 기존 자식을 모두 제거하고 root의 자식들을 새로 렌더링한다.
+/**
+ * 실제 영역의 기존 자식을 모두 제거하고 root의 자식들을 새로 렌더링한다.
+ */
 export function renderChildren(root: VRoot, container: Element): void {
   container.replaceChildren();
   root.dom = container;
 
+  const fragment = document.createDocumentFragment();
+
   for (const child of root.childNodes) {
-    container.appendChild(renderNode(child));
+    fragment.appendChild(renderNode(child));
   }
+
+  container.appendChild(fragment);
 }
 
-// nextRoot의 모든 VNode가 actualRoot 안의 실제 DOM을 가리키는지 검증한다.
+/**
+ * nextRoot의 모든 VNode가 actualRoot 안의 실제 DOM을 가리키는지 검증한다.
+ */
 export function assertAllLinked(root: VRoot, actualRoot: Element): void {
   if (root.dom !== actualRoot) {
     throw new Error('VRoot.dom does not point to actualRoot');
   }
 
-  const visit = (node: VNode): void => {
-    if (!node.dom) {
-      throw new Error(`VNode is not linked: ${node.tagName ?? '#text'}`);
-    }
-    if (!actualRoot.contains(node.dom)) {
-      throw new Error(`VNode dom is outside actualRoot: ${node.tagName ?? '#text'}`);
-    }
-    for (const child of node.childNodes) visit(child);
-  };
-
-  for (const child of root.childNodes) visit(child);
+  for (const child of root.childNodes) {
+    assertSubtreeLinked(child, actualRoot);
+  }
 }
 
 // 같은 부모의 자식 쌍을 matchChildren()으로 찾아 재귀적으로 연결한다.
 function linkChildren(prevChildren: VNode[], nextChildren: VNode[]): void {
-  const plan = matchChildren(prevChildren, nextChildren);
+  const { pairs } = matchChildren(prevChildren, nextChildren);
 
-  for (const pair of plan.pairs) {
-    linkNode(pair.prev, pair.next);
+  for (const { prev, next } of pairs) {
+    linkNode(prev, next);
   }
 }
 
 // 같은 type/tag 쌍만 기존 dom을 복사한다. replace 대상은 건너뛴다.
 function linkNode(prev: VNode, next: VNode): void {
-  if (prev.nodeType !== next.nodeType) return;
-  if (prev.nodeType === 1 && prev.tagName !== next.tagName) return;
+  if (!isLinkablePair(prev, next)) return;
 
-  next.dom = prev.dom;
+  next.dom = requireDom(prev, 'link previous node');
 
   if (next.nodeType === 1) {
     linkChildren(prev.childNodes, next.childNodes);
   }
+}
+
+function isLinkablePair(prev: VNode, next: VNode): boolean {
+  if (prev.nodeType !== next.nodeType) return false;
+  return prev.nodeType === 3 || prev.tagName === next.tagName;
 }
 
 // 변경 명령 하나를 해당 실제 DOM 연산으로 분기한다.
@@ -119,26 +125,26 @@ function applyChange(change: DiffCommand): void {
   switch (change.type) {
     case 'replace':
       replaceNode(change.target, change.node);
-      break;
+      return;
     case 'update':
       updateNode(change.target, change.data);
-      break;
+      return;
     case 'insert':
       insertNode(change.node, change.parent, change.before);
-      break;
+      return;
     case 'remove':
       removeNode(change.target);
-      break;
+      return;
     case 'move':
       moveNode(change.target, change.parent, change.before);
-      break;
+      return;
+    default:
+      assertNever(change);
   }
 }
 
 // update 명령의 텍스트·속성·properties 변경을 적용한다.
 function updateNode(target: VNode, data: UpdateData): void {
-  requireDom(target, 'update target');
-
   if (target.nodeType === 3) {
     if (data.nodeValue !== undefined) {
       updateText(target, data.nodeValue);
@@ -147,41 +153,37 @@ function updateNode(target: VNode, data: UpdateData): void {
   }
 
   updateAttributes(target, data);
-  if (data.properties) updateProperties(target, data.properties);
+
+  if (data.properties) {
+    updateProperties(target, data.properties);
+  }
 }
 
 // 텍스트 노드의 nodeValue를 변경한다.
 function updateText(target: VNode, nodeValue: string): void {
-  const dom = requireDom(target, 'update target');
-  if (!(dom instanceof Text)) throw new Error('updateText target is not a Text node');
-  dom.nodeValue = nodeValue;
+  requireTextDom(target, 'update target').nodeValue = nodeValue;
 }
 
 // setAttributes/removeAttributes를 실제 Element에 적용한다.
 function updateAttributes(target: VNode, data: UpdateData): void {
-  const dom = requireDom(target, 'update target');
-  if (!(dom instanceof Element)) return;
+  const element = requireElementDom(target, 'update target');
 
-  for (const attribute of data.setAttributes ?? []) {
-    dom.setAttribute(attribute.name, attribute.value);
-  }
+  applyAttributes(element, data.setAttributes ?? []);
+
   for (const name of data.removeAttributes ?? []) {
-    dom.removeAttribute(name);
+    element.removeAttribute(name);
   }
 }
 
 // properties 값을 실제 DOM 프로퍼티에 적용한다.
 function updateProperties(target: VNode, properties: VNodeProperties): void {
-  const dom = requireDom(target, 'update target');
-  if (!(dom instanceof Element)) return;
-  applyProperties(dom, properties);
+  applyProperties(requireElementDom(target, 'update target'), properties);
 }
 
 // target의 실제 DOM을 새 VNode의 DOM으로 제자리 교체한다.
 function replaceNode(target: VNode, node: VNode): void {
   const targetDom = requireDom(target, 'replace target');
-  const parent = targetDom.parentNode;
-  if (!parent) throw new Error('replace target is not attached');
+  const parent = requireParent(targetDom, 'replace target');
 
   parent.replaceChild(renderNode(node), targetDom);
 }
@@ -192,16 +194,16 @@ function insertNode(
   parent: VNode | VRoot,
   before: VNode | null
 ): void {
-  const parentDom = requireDom(parent, 'insert parent');
-  const beforeDom = before ? requireDom(before, 'insert before') : null;
-
+  const { parentDom, beforeDom } = resolveInsertionPoint(parent, before, 'insert');
   parentDom.insertBefore(renderNode(node), beforeDom);
 }
 
 // target의 실제 DOM을 부모에서 제거한다.
 function removeNode(target: VNode): void {
   const targetDom = requireDom(target, 'remove target');
-  targetDom.parentNode?.removeChild(targetDom);
+  const parent = requireParent(targetDom, 'remove target');
+
+  parent.removeChild(targetDom);
 }
 
 // 기존 DOM 객체를 parent의 before 앞으로 이동한다.
@@ -211,33 +213,86 @@ function moveNode(
   before: VNode | null
 ): void {
   const targetDom = requireDom(target, 'move target');
-  const parentDom = requireDom(parent, 'move parent');
-  const beforeDom = before ? requireDom(before, 'move before') : null;
+  const { parentDom, beforeDom } = resolveInsertionPoint(parent, before, 'move');
 
   parentDom.insertBefore(targetDom, beforeDom);
 }
 
+// insert/move 명령의 부모와 기준 형제 DOM을 해석한다.
+function resolveInsertionPoint(
+  parent: VNode | VRoot,
+  before: VNode | null,
+  operation: 'insert' | 'move'
+): { parentDom: Node; beforeDom: Node | null } {
+  const parentDom = requireDom(parent, `${operation} parent`);
+  const beforeDom =
+    before === null ? null : requireDom(before, `${operation} before`);
+
+  return { parentDom, beforeDom };
+}
+
+function assertSubtreeLinked(node: VNode, actualRoot: Element): void {
+  if (node.dom === null) {
+    throw new Error(`VNode is not linked: ${nodeLabel(node)}`);
+  }
+
+  if (!actualRoot.contains(node.dom)) {
+    throw new Error(`VNode dom is outside actualRoot: ${nodeLabel(node)}`);
+  }
+
+  for (const child of node.childNodes) {
+    assertSubtreeLinked(child, actualRoot);
+  }
+}
+
 // VNode/VRoot의 dom이 연결되어 있는지 확인하고 반환한다.
 function requireDom(node: VNode | VRoot, label: string): Node {
-  if (!node.dom) throw new Error(`${label}.dom is not linked`);
+  if (node.dom === null) throw new Error(`${label}: dom is not linked`);
   return node.dom;
+}
+
+function requireElementDom(node: VNode | VRoot, label: string): Element {
+  const dom = requireDom(node, label);
+  if (!(dom instanceof Element)) throw new Error(`${label}: dom is not an Element`);
+  return dom;
+}
+
+function requireTextDom(node: VNode, label: string): Text {
+  const dom = requireDom(node, label);
+  if (!(dom instanceof Text)) throw new Error(`${label}: dom is not a Text node`);
+  return dom;
+}
+
+function requireParent(node: Node, label: string): Node {
+  const parent = node.parentNode;
+  if (parent === null) throw new Error(`${label}: dom is not attached`);
+  return parent;
+}
+
+function nodeLabel(node: VNode): string {
+  return node.nodeType === 3 ? '#text' : node.tagName ?? '#element';
 }
 
 // VNode attributes를 실제 Element attribute로 설정한다.
 function applyAttributes(element: Element, attributes: VNodeAttribute[]): void {
-  for (const attribute of attributes) {
-    element.setAttribute(attribute.name, attribute.value);
+  for (const { name, value } of attributes) {
+    element.setAttribute(name, value);
   }
 }
 
-// properties를 실제 DOM 프로퍼티로 설정한다. 다중 SELECT의 value는 건너뛴다.
+// properties를 실제 DOM 프로퍼티로 설정한다.
 function applyProperties(element: Element, properties: VNodeProperties): void {
   for (const [name, value] of Object.entries(properties)) {
-    // 다중 선택은 OPTION.selected로 복원한다. SELECT.value 대입이 선택을 해제하지 않게 한다.
-    if (element instanceof HTMLSelectElement && element.multiple && name === 'value') {
-      continue;
-    }
-
+    if (isMultiSelectValue(element, name)) continue;
     Reflect.set(element, name, value);
   }
+}
+
+// 다중 선택은 OPTION.selected로 복원한다. SELECT.value 대입이 선택을 해제하지 않게 한다.
+function isMultiSelectValue(element: Element, name: string): boolean {
+  return element instanceof HTMLSelectElement && element.multiple && name === 'value';
+}
+
+function assertNever(value: never): never {
+  throw new Error(`Unexpected value: ${String(value)}`);
 }

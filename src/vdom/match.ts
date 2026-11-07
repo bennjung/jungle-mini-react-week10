@@ -1,13 +1,4 @@
 import type { VNode } from './types';
-/* pairNextChildren	                    :prev 인덱싱, next 한 번 순회, keyed/keyless 대응, next 순서 정렬
- * collectInserts	                      :다음에만 있는 노드와 before 계산
- * collectMoves	                        :prev 순서 시퀀스 → LIS → keyed move 계산
- * indexPrevChildren	                  :prev를 keyed bucket / keyless 순서로 분류
- * indexByPosition	                    :VNode → 배열 인덱스 Map
- * longestIncreasingSubsequenceIndices  :유지할 keyed 상대 순서 계산 */
-
-
-
 
 // 같은 부모 안에서 대응된 이전·다음 노드 쌍
 export interface MatchedPair {
@@ -49,8 +40,7 @@ export function matchChildren(
   const nextOrder = indexByPosition(nextChildren);
   const { pairs, matchedPrev, matchedNext } = pairNextChildren(
     prevChildren,
-    nextChildren,
-    nextOrder
+    nextChildren
   );
 
   return {
@@ -62,10 +52,10 @@ export function matchChildren(
 }
 
 // prev 인덱스를 만들고 next 자식을 한 번 순회해 keyed/keyless 대응을 만든다.
+// nextChildren 순서대로 pair를 추가하므로 pairs는 별도 정렬이 필요 없다.
 function pairNextChildren(
   prevChildren: VNode[],
-  nextChildren: VNode[],
-  nextOrder: Map<VNode, number>
+  nextChildren: VNode[]
 ): NextMatchResult {
   const { keyed: keyedPrev, keyless: keylessPrev } = indexPrevChildren(prevChildren);
 
@@ -85,23 +75,19 @@ function pairNextChildren(
     const key = keyOf(next);
 
     if (key !== null) {
-      const bucket = keyedPrev.get(key);
-      if (!bucket || bucket.length === 0) continue;
+      const prev = keyedPrev.get(key)?.shift();
+      if (prev === undefined) continue;
 
-      recordPair(bucket.shift() as VNode, next);
+      recordPair(prev, next);
       continue;
     }
 
     const prev = keylessPrev[keylessCursor];
-    if (!prev) continue;
+    if (prev === undefined) continue;
 
     keylessCursor += 1;
     recordPair(prev, next);
   }
-
-  pairs.sort(
-    (a, b) => (nextOrder.get(a.next) as number) - (nextOrder.get(b.next) as number)
-  );
 
   return { pairs, matchedPrev, matchedNext };
 }
@@ -111,13 +97,18 @@ function collectInserts(
   nextChildren: VNode[],
   matchedNext: Set<VNode>
 ): ChildMatchPlan['inserts'] {
-  return nextChildren
-    .map((next, index) => ({ next, index }))
-    .filter(({ next }) => !matchedNext.has(next))
-    .map(({ next, index }) => ({
+  const inserts: ChildMatchPlan['inserts'] = [];
+
+  nextChildren.forEach((next, index) => {
+    if (matchedNext.has(next)) return;
+
+    inserts.push({
       next,
       before: nextChildren[index + 1] ?? null
-    }));
+    });
+  });
+
+  return inserts;
 }
 
 // keyed 순서가 바뀐 pair만 move 후보로 만든다.
@@ -128,18 +119,18 @@ function collectMoves(
   nextOrder: Map<VNode, number>
 ): ChildMatchPlan['moves'] {
   const prevOrder = indexByPosition(prevChildren);
-  const sequence = pairs.map((pair) => prevOrder.get(pair.prev) as number);
+  const sequence = pairs.map(({ prev }) => requireIndex(prevOrder, prev));
   const keep = new Set(longestIncreasingSubsequenceIndices(sequence));
   const moves: ChildMatchPlan['moves'] = [];
 
-  pairs.forEach((pair, index) => {
+  pairs.forEach(({ prev, next }, index) => {
     if (keep.has(index)) return;
-    if (keyOf(pair.next) === null) return;
+    if (keyOf(next) === null) return;
 
-    const nextIndex = nextOrder.get(pair.next) as number;
+    const nextIndex = requireIndex(nextOrder, next);
     moves.push({
-      prev: pair.prev,
-      next: pair.next,
+      prev,
+      next,
       before: nextChildren[nextIndex + 1] ?? null
     });
   });
@@ -181,34 +172,54 @@ function indexByPosition(children: VNode[]): Map<VNode, number> {
   return order;
 }
 
+function requireIndex(order: Map<VNode, number>, node: VNode): number {
+  const index = order.get(node);
+
+  if (index === undefined) {
+    throw new Error('VNode is not part of the child list');
+  }
+
+  return index;
+}
+
 // prev 순서의 LIS를 구해 move가 필요 없는 keyed 노드를 가려낸다.
 function longestIncreasingSubsequenceIndices(values: number[]): number[] {
   const tails: number[] = [];
   const previous = new Array<number>(values.length).fill(-1);
 
   for (let index = 0; index < values.length; index += 1) {
-    const value = values[index] as number;
+    const value = valueAt(values, index);
     let low = 0;
     let high = tails.length;
 
     while (low < high) {
       const middle = Math.floor((low + high) / 2);
-      const middleIndex = tails[middle] as number;
-      if ((values[middleIndex] as number) < value) low = middle + 1;
+      const middleIndex = valueAt(tails, middle);
+      if (valueAt(values, middleIndex) < value) low = middle + 1;
       else high = middle;
     }
 
-    if (low > 0) previous[index] = tails[low - 1] as number;
+    if (low > 0) previous[index] = valueAt(tails, low - 1);
     tails[low] = index;
   }
 
   const result: number[] = [];
-  let cursor = tails.length > 0 ? (tails[tails.length - 1] as number) : -1;
+  let cursor = tails.length > 0 ? valueAt(tails, tails.length - 1) : -1;
 
   while (cursor !== -1) {
     result.push(cursor);
-    cursor = previous[cursor] as number;
+    cursor = valueAt(previous, cursor);
   }
 
   return result.reverse();
+}
+
+function valueAt(values: readonly number[], index: number): number {
+  const value = values[index];
+
+  if (value === undefined) {
+    throw new Error(`Missing value at index ${index}`);
+  }
+
+  return value;
 }
