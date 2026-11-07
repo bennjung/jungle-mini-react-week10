@@ -1,10 +1,21 @@
 import type { VNode } from './types';
+/* pairNextChildren	                    :prev 인덱싱, next 한 번 순회, keyed/keyless 대응, next 순서 정렬
+ * collectInserts	                      :다음에만 있는 노드와 before 계산
+ * collectMoves	                        :prev 순서 시퀀스 → LIS → keyed move 계산
+ * indexPrevChildren	                  :prev를 keyed bucket / keyless 순서로 분류
+ * indexByPosition	                    :VNode → 배열 인덱스 Map
+ * longestIncreasingSubsequenceIndices  :유지할 keyed 상대 순서 계산 */
 
+
+
+
+// 같은 부모 안에서 대응된 이전·다음 노드 쌍
 export interface MatchedPair {
   prev: VNode;
   next: VNode;
 }
 
+// matchChildren()이 반환하는 자식 대응 계획
 export interface ChildMatchPlan {
   pairs: MatchedPair[];
   inserts: Array<{ next: VNode; before: VNode | null }>;
@@ -12,6 +23,14 @@ export interface ChildMatchPlan {
   moves: Array<{ prev: VNode; next: VNode; before: VNode | null }>;
 }
 
+// next 자식 대응 단계의 중간 결과
+interface NextMatchResult {
+  pairs: MatchedPair[];
+  matchedPrev: Set<VNode>;
+  matchedNext: Set<VNode>;
+}
+
+// 요소의 key attribute 값을 식별자로 반환한다. 텍스트/keyless 요소는 null
 function keyOf(node: VNode): string | null {
   if (node.nodeType !== 1) return null;
   const attribute = node.attributes.find(({ name }) => name === 'key');
@@ -27,69 +46,88 @@ export function matchChildren(
   prevChildren: VNode[],
   nextChildren: VNode[]
 ): ChildMatchPlan {
-  const keyedPrev = new Map<string, VNode[]>();
-  const keylessPrev: VNode[] = [];
+  const nextOrder = indexByPosition(nextChildren);
+  const { pairs, matchedPrev, matchedNext } = pairNextChildren(
+    prevChildren,
+    nextChildren,
+    nextOrder
+  );
 
-  for (const node of prevChildren) {
-    const key = keyOf(node);
-    if (key === null) {
-      keylessPrev.push(node);
-    } else {
-      const bucket = keyedPrev.get(key);
-      if (bucket) bucket.push(node);
-      else keyedPrev.set(key, [node]);
-    }
-  }
+  return {
+    pairs,
+    inserts: collectInserts(nextChildren, matchedNext),
+    removals: prevChildren.filter((node) => !matchedPrev.has(node)),
+    moves: collectMoves(pairs, prevChildren, nextChildren, nextOrder)
+  };
+}
+
+// prev 인덱스를 만들고 next 자식을 한 번 순회해 keyed/keyless 대응을 만든다.
+function pairNextChildren(
+  prevChildren: VNode[],
+  nextChildren: VNode[],
+  nextOrder: Map<VNode, number>
+): NextMatchResult {
+  const { keyed: keyedPrev, keyless: keylessPrev } = indexPrevChildren(prevChildren);
 
   const pairs: MatchedPair[] = [];
   const matchedPrev = new Set<VNode>();
   const matchedNext = new Set<VNode>();
   let keylessCursor = 0;
 
+  // keyed/keyless 조회 결과를 공통 형식으로 등록한다.
+  const recordPair = (prev: VNode, next: VNode): void => {
+    pairs.push({ prev, next });
+    matchedPrev.add(prev);
+    matchedNext.add(next);
+  };
+
   for (const next of nextChildren) {
     const key = keyOf(next);
-    if (key === null) continue;
 
-    const bucket = keyedPrev.get(key);
-    if (!bucket || bucket.length === 0) continue;
+    if (key !== null) {
+      const bucket = keyedPrev.get(key);
+      if (!bucket || bucket.length === 0) continue;
 
-    const prev = bucket.shift() as VNode;
-    pairs.push({ prev, next });
-    matchedPrev.add(prev);
-    matchedNext.add(next);
-  }
-
-  for (const next of nextChildren) {
-    if (keyOf(next) !== null) continue;
+      recordPair(bucket.shift() as VNode, next);
+      continue;
+    }
 
     const prev = keylessPrev[keylessCursor];
-    if (!prev) break;
+    if (!prev) continue;
 
     keylessCursor += 1;
-    pairs.push({ prev, next });
-    matchedPrev.add(prev);
-    matchedNext.add(next);
+    recordPair(prev, next);
   }
 
-  const nextOrder = new Map<VNode, number>();
-  nextChildren.forEach((node, index) => nextOrder.set(node, index));
   pairs.sort(
     (a, b) => (nextOrder.get(a.next) as number) - (nextOrder.get(b.next) as number)
   );
 
-  const removals = prevChildren.filter((node) => !matchedPrev.has(node));
+  return { pairs, matchedPrev, matchedNext };
+}
 
-  const inserts = nextChildren
+// 다음에만 있는 노드를 insert 후보로 만든다. before는 다음 형제 또는 null이다.
+function collectInserts(
+  nextChildren: VNode[],
+  matchedNext: Set<VNode>
+): ChildMatchPlan['inserts'] {
+  return nextChildren
     .map((next, index) => ({ next, index }))
     .filter(({ next }) => !matchedNext.has(next))
     .map(({ next, index }) => ({
       next,
       before: nextChildren[index + 1] ?? null
     }));
+}
 
-  const prevOrder = new Map<VNode, number>();
-  prevChildren.forEach((node, index) => prevOrder.set(node, index));
-
+// keyed 순서가 바뀐 pair만 move 후보로 만든다.
+function collectMoves(
+  pairs: MatchedPair[],
+  prevChildren: VNode[],
+  nextChildren: VNode[],
+  nextOrder: Map<VNode, number>
+): ChildMatchPlan['moves'] {
+  const prevOrder = indexByPosition(prevChildren);
   const sequence = pairs.map((pair) => prevOrder.get(pair.prev) as number);
   const keep = new Set(longestIncreasingSubsequenceIndices(sequence));
   const moves: ChildMatchPlan['moves'] = [];
@@ -106,9 +144,44 @@ export function matchChildren(
     });
   });
 
-  return { pairs, inserts, removals, moves };
+  return moves;
 }
 
+// 이전 자식들을 keyed bucket과 keyless 순서 목록으로 인덱싱한다.
+function indexPrevChildren(children: VNode[]): {
+  keyed: Map<string, VNode[]>;
+  keyless: VNode[];
+} {
+  const keyed = new Map<string, VNode[]>();
+  const keyless: VNode[] = [];
+
+  for (const node of children) {
+    const key = keyOf(node);
+    if (key === null) {
+      keyless.push(node);
+      continue;
+    }
+
+    const bucket = keyed.get(key);
+    if (bucket) bucket.push(node);
+    else keyed.set(key, [node]);
+  }
+
+  return { keyed, keyless };
+}
+
+// VNode 배열을 노드 객체 → 위치 인덱스 Map으로 만든다.
+function indexByPosition(children: VNode[]): Map<VNode, number> {
+  const order = new Map<VNode, number>();
+
+  children.forEach((node, index) => {
+    order.set(node, index);
+  });
+
+  return order;
+}
+
+// prev 순서의 LIS를 구해 move가 필요 없는 keyed 노드를 가려낸다.
 function longestIncreasingSubsequenceIndices(values: number[]): number[] {
   const tails: number[] = [];
   const previous = new Array<number>(values.length).fill(-1);
