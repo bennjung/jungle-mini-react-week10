@@ -76,7 +76,8 @@ const propertySchema = {
 ## 3. Diff — accepted
 
 ```ts
-// src/vdom/diff.ts
+// Diff 계약. 외부 진입점 src/vdom/diff/index.ts는 diff만 내보낸다.
+// AttributeUpdate는 diff/types.ts, orderChanges는 diff/orderChanges.ts의 내부 계약이다.
 
 export interface AttributeUpdate {
   setAttributes: VNodeAttribute[];
@@ -94,7 +95,9 @@ export type DiffCommand =
   | { type: 'replace'; target: VNode; node: VNode }
   | { type: 'update'; target: VNode; data: UpdateData }
   | { type: 'insert'; node: VNode; parent: VNode | VRoot; before: VNode | null }
+  | { type: 'insert'; node: VNode; parent: VNode | VRoot; before: VNode | null }
   | { type: 'remove'; target: VNode }
+  | { type: 'move'; target: VNode; parent: VNode | VRoot; before: VNode | null };
   | { type: 'move'; target: VNode; parent: VNode | VRoot; before: VNode | null };
 
 export function diff(prevRoot: VRoot, nextRoot: VRoot): DiffCommand[];
@@ -180,7 +183,9 @@ function updateAttributes(target: VNode, data: UpdateData): void;
 function updateProperties(target: VNode, properties: VNodeProperties): void;
 function replaceNode(target: VNode, node: VNode): void;
 function insertNode(node: VNode, parent: VNode | VRoot, before: VNode | null): void;
+function insertNode(node: VNode, parent: VNode | VRoot, before: VNode | null): void;
 function removeNode(target: VNode): void;
+function moveNode(target: VNode, parent: VNode | VRoot, before: VNode | null): void;
 function moveNode(target: VNode, parent: VNode | VRoot, before: VNode | null): void;
 ```
 

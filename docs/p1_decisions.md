@@ -1,5 +1,14 @@
 # Phase 1 결정 기록
 
+## P1-VDOM-PARENT-01 — 명령의 부모 타입에 VRoot 반영
+
+- **상태:** accepted
+- **날짜:** 2026-11-07
+- **결정:** insert·move 명령 및 관련 함수 설명의 `parent`를 `VNode | VRoot`로 동기화한다. 최상위 자식의 부모는 다음 `VRoot`다.
+- **이유:** 기존 VRoot 도입 결정과 최상위 삽입 시나리오를 타입 계약에 일치시킨다. 사용자가 부모 타입과 관련 공용 문서의 동기화를 승인했다.
+- **영향 범위:** `src/vdom/types.ts`, `p1_interfaces.md`, `p1_function_flow.md`, `p1_prd.md`, `p1_test_cases.md`, 개인 Diff 작업 문서.
+- **유지:** 명령의 의미·노드 참조 방향과 기존 테스트 기대 결과, Patch의 미확정 내부 연결 방식은 변경하지 않는다.
+
 ## P1-ROLLBACK-01 — applyPatch 실패 시 C1 복구
 
 - **상태:** accepted
