@@ -13,7 +13,7 @@
 | Patch 성공 | 변경 전 비교 기준 | 유지된 노드와 새 노드를 포함해 실제 DOM 참조 연결 완료 |
 | 현재 상태 지정·이력 저장 | 이전 상태 | 완성된 다음 VDOM을 현재 상태로 사용 |
 
-아래 내용은 호출 흐름을 설명한다. Patch에 이전·다음 VDOM과 명령을 전달하는 구체적인 인자 형식, 완성된 VDOM의 반환·갱신 방식은 아직 확정하지 않는다.
+아래 내용은 호출 흐름을 설명한다. Patch는 `applyPatch(prevRoot, nextRoot, changes)`로 호출하며, `changes`는 정렬된 명령 배열이고 완성된 `nextRoot`를 반환한다.
 
 ## 1. main.html → 진입점
 
@@ -80,7 +80,8 @@ function handleHistoryMove(direction) {
 ## 3. applyPatch() → 실제 DOM 변경과 다음 VDOM 참조 연결
 
 ```text
-applyPatch()                            이전·다음 VDOM과 변경 명령을 이용하는 Patch 단계
+applyPatch(prevRoot, nextRoot, changes) 이전·다음 VDOM과 변경 명령을 이용하는 Patch 단계
+├─ linkMatchedDom(prevRoot, nextRoot)   유지·이동 노드에 이전 실제 DOM 연결
 ├─ replaceNode(target, node)            제자리 교체, 이동은 move
 │  ├─ renderNode(node)                  새 실제 DOM 생성·참조 연결
 │  └─ 기존 DOM 교체
@@ -95,10 +96,11 @@ applyPatch()                            이전·다음 VDOM과 변경 명령을 
 │  └─ 대상 DOM 제거
 ├─ moveNode(target, parent, before)
 │  └─ 기존 DOM을 기준 형제 앞으로 이동
-└─ 다음 VDOM 전체에 실제 DOM 참조 연결 완료
-   ├─ 유지·수정·이동 노드 → 이전 VDOM에서 찾은 실제 DOM 연결
-   ├─ 삽입·교체 노드 → 생성된 실제 DOM 연결
-   └─ VRoot → 실제 영역 컨테이너 연결
+├─ 다음 VDOM 전체에 실제 DOM 참조 연결 완료
+│  ├─ 유지·수정·이동 노드 → 이전 VDOM에서 찾은 실제 DOM 연결
+│  ├─ 삽입·교체 노드 → 생성된 실제 DOM 연결
+│  └─ VRoot → 실제 영역 컨테이너 연결
+└─ assertAllLinked(nextRoot, actualRoot) 전체 연결 확인
 ```
 
 명령은 VDOM 객체를 직접 참조한다. Patch 시작 시 기존 실제 DOM은 이전 VDOM의 `dom`으로 찾으며, 다음 VDOM의 `dom`은 모두 null이다. 부모·기준 형제의 실제 DOM 참조도 Patch에서 해석한다. 이 참조는 편집기나 파싱용 임시 DOM을 가리키지 않는다.
@@ -106,7 +108,7 @@ applyPatch()                            이전·다음 VDOM과 변경 명령을 
 
 기존 실제 DOM과 다음 VDOM의 연결은 Patch에서 수행한다. `renderNode()`는 새 실제 DOM을 생성할 때 해당 다음 VDOM 노드에 연결한다. 기존 노드를 유지·수정·이동하는 경우에도 다음 VDOM에 해당 실제 DOM 참조를 연결한다.
 
-변경 명령이 없는 노드와 그 하위 트리도 연결 대상이다. Patch 성공 시 `VRoot`를 포함한 다음 VDOM 전체가 실제 DOM을 가리켜야 한다. 참조를 연결하려고 변경 없는 실제 DOM을 재생성하지 않는다. 유지 노드의 참조 연결 방식은 `p1_decisions.md`의 P1-PATCH-LINK-01을 따른다.
+변경 명령이 없는 노드와 그 하위 트리도 연결 대상이다. Patch 성공 시 `VRoot`를 포함한 다음 VDOM 전체가 실제 DOM을 가리켜야 한다. 참조를 연결하려고 변경 없는 실제 DOM을 재생성하지 않는다. 유지 노드의 참조 연결 방식은 `p1_decisions.md`의 P1-PATCH-LINK-01 A안을 따른다.
 
 applyPatch 실행 중 예외가 발생하면 applyPatch 자체는 롤백하지 않는다. 호출자인 handlePatch가 현재 이력 데이터로 실제 영역만 복원하고, 다음 VDOM은 현재 상태로 사용하지 않는다.
 

@@ -2,7 +2,7 @@
 
 기준: `p1_prd.md`, `p1_function_flow.md`, `p1_test_cases.md`, `p1_decisions.md`.
 
-아래 코드는 구현 코드가 아니라 타입·함수 계약이다. `accepted`와 `pending`을 구분한다. `pending` 항목은 확정 전까지 구현 기준으로 사용하지 않는다.
+아래 코드는 구현 코드가 아니라 타입·함수 계약이다. `accepted`와 `제안`을 구분한다. `제안` 항목은 확정 전까지 구현 기준으로 사용하지 않는다.
 
 ## 1. 공통 타입 — accepted
 
@@ -93,29 +93,34 @@ export type UpdateData = {
 export type DiffCommand =
   | { type: 'replace'; target: VNode; node: VNode }
   | { type: 'update'; target: VNode; data: UpdateData }
-  | { type: 'insert'; node: VNode; parent: VNode; before: VNode | null }
+  | { type: 'insert'; node: VNode; parent: VNode | VRoot; before: VNode | null }
   | { type: 'remove'; target: VNode }
-  | { type: 'move'; target: VNode; parent: VNode; before: VNode | null };
+  | { type: 'move'; target: VNode; parent: VNode | VRoot; before: VNode | null };
 
 export function diff(prevRoot: VRoot, nextRoot: VRoot): DiffCommand[];
 
 export function orderChanges(changes: DiffCommand[]): DiffCommand[];
+
+export function diffAttributes(prev: VNode, next: VNode): AttributeUpdate | null;
+
+export function diffProperties(prev: VNode, next: VNode): VNodeProperties | null;
 ```
 
 - `target`은 이전 VDOM 노드, `node`는 다음 VDOM 노드다.
-- `parent`·`before`는 다음 VDOM 노드다. `before === null`은 맨 뒤를 뜻한다.
+- `parent`는 다음 VDOM의 `VNode` 또는 `VRoot`다. root-level insert·move는 `VRoot`를 parent로 사용한다.
+- `before`는 다음 VDOM 노드 또는 null이다. `before === null`은 맨 뒤를 뜻한다.
 - `diff()`는 정렬된 명령 배열을 반환하며, 입력 VDOM과 실제 DOM을 수정하지 않는다.
 - Diff 종료 후에도 다음 VDOM의 모든 `dom`은 null이다.
 - 노드 대응은 keyed 요소는 같은 `key`, keyless 요소와 텍스트 노드는 같은 부모 안의 자식 순서로 계산한다.
 - `replace`는 제자리 교체만 담당하고, 위치 이동은 `move`가 담당한다.
 - `orderChanges()`는 부모·기준 형제가 먼저 존재하도록 명령 순서를 정한다.
 
-## 4. Diff·Patch 공유 매칭 — pending
+## 4. Diff·Patch 공유 매칭 — accepted
 
-`P1-PATCH-LINK-01`이 확정되기 전까지 아래 인터페이스는 제안이다.
+`P1-PATCH-LINK-01` A안으로 확정했다. 구현은 `src/vdom/match.ts`에 둔다.
 
 ```ts
-// src/vdom/match.ts (제안)
+// src/vdom/match.ts
 
 export interface ChildMatchPlan {
   pairs: Array<{ prev: VNode; next: VNode }>;          // next 순서
@@ -134,14 +139,15 @@ export function matchChildren(
 - Patch는 이 계획으로 유지·이동 노드의 `prev.dom`을 `next.dom`에 연결한다.
 - `pairs`는 replace 대상도 포함할 수 있다. Patch의 연결 단계에서는 type/tag가 다른 쌍을 건너뛴다.
 - `inserts`의 노드는 대응하는 이전 노드가 없으므로 `dom`을 연결하지 않는다.
-- `matchChildren()`의 소유권과 반환 형태는 `P1-PATCH-LINK-01`에서 확정한다.
+- `matchChildren()`은 Diff와 Patch가 공유하는 모듈로 둔다.
+- 중복 key는 현재 등장 순서대로 대응하는 잠정 동작이며, CONF-03 확정 시 함께 조정한다.
 
-## 5. Patch — pending
+## 5. Patch — accepted
 
-`P1-PATCH-LINK-01`이 확정되기 전까지 아래 인터페이스는 제안이다.
+`P1-PATCH-LINK-01` A안으로 확정했다. 구현은 `src/vdom/patch.ts`에 둔다.
 
 ```ts
-// src/vdom/patch.ts (제안)
+// src/vdom/patch.ts
 
 export function applyPatch(
   prevRoot: VRoot,
@@ -162,15 +168,15 @@ export function assertAllLinked(root: VRoot, actualRoot: Element): void;
 
 ```ts
 function updateText(target: VNode, nodeValue: string): void;
-function updateAttributes(target: VNode, data: AttributeUpdate): void;
+function updateAttributes(target: VNode, data: UpdateData): void;
 function updateProperties(target: VNode, properties: VNodeProperties): void;
 function replaceNode(target: VNode, node: VNode): void;
-function insertNode(node: VNode, parent: VNode, before: VNode | null): void;
+function insertNode(node: VNode, parent: VNode | VRoot, before: VNode | null): void;
 function removeNode(target: VNode): void;
-function moveNode(target: VNode, parent: VNode, before: VNode | null): void;
+function moveNode(target: VNode, parent: VNode | VRoot, before: VNode | null): void;
 ```
 
-제안 A의 `applyPatch()` 계약:
+확정된 `applyPatch()` 계약:
 
 - `changes`는 `diff()` 또는 `orderChanges()`가 정렬한 명령 배열이다.
 - `linkMatchedDom(prevRoot, nextRoot)`로 유지·이동 노드의 `prev.dom`을 `next.dom`에 연결한다.
@@ -179,9 +185,9 @@ function moveNode(target: VNode, parent: VNode, before: VNode | null): void;
 - 완성된 `nextRoot`를 반환한다.
 - History 저장은 하지 않는다. 저장 여부는 `handlePatch()`가 결정한다.
 
-`P1-PATCH-LINK-01`에서 A/B가 바뀌면 `applyPatch()`의 인자·반환과 `matchChildren()`의 사용 방식도 함께 바뀐다.
+B안(`diff()`가 `{ changes, matches }` 반환)은 채택하지 않았다.
 
-## 6. App·통합 — accepted (연결부 pending)
+## 6. App·통합 — accepted (I/O 제안)
 
 ```ts
 // src/app/init.ts
@@ -220,7 +226,6 @@ const completed = applyPatch(prev, next, changes);
 history.set(completed, html);
 ```
 
-- `applyPatch()` 부분은 `P1-PATCH-LINK-01` 확정 전까지 제안이다.
 - `readEditorHTML`/`writeEditorHTML`의 인자 형태는 앱 통합 단계에서 확정한다.
 
 ## 7. 상태 요약
@@ -230,7 +235,7 @@ history.set(completed, html);
 | `VNode`, `VRoot`, `DiffCommand` | accepted | P1-VDOM-ROOT-01, PRD §9 |
 | VDOM create 함수 | accepted | PRD §5, 함수 흐름 §5 |
 | Diff 함수·명령 | accepted | PRD §4, §9.2 |
-| `matchChildren`, `ChildMatchPlan` | pending | P1-PATCH-LINK-01 |
-| Patch 함수·연결 방식 | pending | P1-PATCH-LINK-01 |
+| `matchChildren`, `ChildMatchPlan` | accepted | P1-PATCH-LINK-01 A |
+| Patch 함수·연결 방식 | accepted | P1-PATCH-LINK-01 A |
 | `AppElements`, `init` | accepted | P1-UI-01 |
 | `readEditorHTML`, `writeEditorHTML` | 제안 | 앱 통합 단계 |

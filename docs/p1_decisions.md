@@ -42,9 +42,8 @@
   - `createEmptyVDOM(actualRoot): VRoot` — `{ childNodes: [], dom: actualRoot }`
   - `createSnapshot(parsedRoot): VRoot` — `{ childNodes: [...], dom: null }`
   - `diff(prevRoot: VRoot, nextRoot: VRoot): DiffCommand[]`
-  - `applyPatch()`의 인자·반환·유지 노드 연결 방식은 P1-PATCH-LINK-01 미확정
 - **영향 범위:** `p1_prd.md` §3, §5, §6, §9.1; `p1_function_flow.md` §3, §5, §6; `p1_test_cases.md` §1, SNAP-05, PATCH-08
-- **미확정:** `VRoot` 자체는 확정. `applyPatch()`의 인자·반환·유지 노드 연결 방식은 P1-PATCH-LINK-01. `VRoot`는 컨테이너 태그·속성을 Diff하지 않는다. 인터페이스는 `p1_interfaces.md`의 §1–§3을 따른다.
+- **후속 결정:** `applyPatch(prevRoot, nextRoot, changes): VRoot`와 유지 노드 연결은 P1-PATCH-LINK-01 A안으로 확정했다. `VRoot`는 컨테이너 태그·속성을 Diff하지 않는다. 인터페이스는 `p1_interfaces.md`의 §1–§3을 따른다.
 
 ## P1-KEY-01 — key attribute를 실제 DOM에도 렌더링
 
@@ -72,11 +71,16 @@
 
 ## P1-PATCH-LINK-01 — 유지 노드의 실제 DOM 참조 연결 방식
 
-- **상태:** pending
+- **상태:** accepted
 - **날짜:** 2026-11-07
 - **배경:** `diff()`는 변경 명령만 반환한다. Patch가 끝나면 다음 VDOM의 모든 노드가 실제 DOM을 가리켜야 하지만, 변경 없는 노드는 명령에 포함되지 않는다.
-- **제안 A:** `applyPatch(prevRoot, nextRoot, changes)`가 `matchChildren()`을 다시 실행해 유지 노드에 `prev.dom`을 연결하고 완성된 `nextRoot`를 반환한다. `diff()`는 지금처럼 명령 배열을 반환한다.
-- **대안 B:** `diff()`가 `{ changes, matches }`를 반환한다. 매칭을 한 번만 하지만 TC·문서의 `diff()` 반환 계약을 바꿔야 한다.
-- **미확정:** A/B 선택, `matchChildren()` 소유권과 분담 구조.
-- **인터페이스 초안:** `p1_interfaces.md` §4–§6
-- **영향 범위:** `p1_prd.md` §3, §9.2; `p1_function_flow.md` §3; `p1_test_cases.md` PATCH-01–08
+- **결정:** A안. `applyPatch(prevRoot, nextRoot, changes)`가 `matchChildren()`을 다시 실행해 유지·이동 노드에 `prev.dom`을 연결하고 완성된 `nextRoot`를 반환한다. `diff()`는 지금처럼 정렬된 명령 배열을 반환한다.
+- **이유:** TC의 `diff()` 반환 계약을 바꾸지 않으면서, Diff와 Patch가 같은 key/keyless 매칭 규칙을 공유할 수 있다. WeakMap이나 배열의 숨은 메타데이터도 필요 없다.
+- **인터페이스:** `p1_interfaces.md` §4–§6
+  - `matchChildren(prevChildren, nextChildren): ChildMatchPlan` — 공유 모듈 `src/vdom/match.ts`
+  - `applyPatch(prevRoot, nextRoot, changes): VRoot`
+  - `linkMatchedDom(prevRoot, nextRoot): void` — 유지·이동 노드 연결
+  - `assertAllLinked(root, actualRoot): void` — Patch 종료 검증
+- **보정:** `VRoot` 분리에 따라 root-level `insert`·`move`의 `parent`는 `VNode | VRoot`다.
+- **검토한 대안:** B안 — `diff()`가 `{ changes, matches }`를 반환한다. 매칭을 한 번만 하지만 기존 TC와 `diff()` 반환 계약을 바꿔야 해서 채택하지 않았다.
+- **영향 범위:** `p1_prd.md` §3, §9.2; `p1_function_flow.md` §3; `p1_test_cases.md` PATCH-01–08; `src/vdom/patch.ts`, `src/vdom/match.ts`, `tests/unit/vdom.patch.test.ts`, `tests/unit/vdom.match.test.ts`

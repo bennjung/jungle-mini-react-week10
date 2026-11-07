@@ -18,7 +18,7 @@
 | Patch 성공 | 변경 전 비교 기준 | 유지된 노드와 새 노드를 포함해 실제 DOM 참조 연결 완료 |
 | 현재 상태 지정·이력 저장 | 이전 상태 | 완성된 다음 VDOM을 현재 상태로 사용 |
 
-아래 내용은 호출 흐름을 설명한다. Patch에 이전·다음 VDOM과 명령을 전달하는 구체적인 인자 형식, 완성된 VDOM의 반환·갱신 방식은 아직 확정하지 않는다. 유지 노드의 참조 연결 방식은 `p1_decisions.md`의 P1-PATCH-LINK-01을 따른다.
+아래 내용은 호출 흐름을 설명한다. Patch는 `applyPatch(prevRoot, nextRoot, changes)`로 호출하며, `changes`는 정렬된 명령 배열이고 완성된 `nextRoot`를 반환한다. 유지 노드의 참조 연결은 `p1_decisions.md`의 P1-PATCH-LINK-01 A안을 따른다.
 
 ## 1. main.html → 진입점
 
@@ -85,7 +85,8 @@ function handleHistoryMove(direction) {
 ## 3. applyPatch() → 실제 DOM 변경과 다음 VDOM 참조 연결
 
 ```text
-applyPatch()                            이전·다음 VDOM과 변경 명령을 이용하는 Patch 단계
+applyPatch(prevRoot, nextRoot, changes) 이전·다음 VDOM과 변경 명령을 이용하는 Patch 단계
+├─ linkMatchedDom(prevRoot, nextRoot)   유지·이동 노드에 이전 실제 DOM 연결
 ├─ replaceNode(target, node)            제자리 교체, 이동은 move
 │  ├─ renderNode(node)                  새 실제 DOM 생성·참조 연결
 │  └─ 기존 DOM 교체
@@ -100,10 +101,11 @@ applyPatch()                            이전·다음 VDOM과 변경 명령을 
 │  └─ 대상 DOM 제거
 ├─ moveNode(target, parent, before)
 │  └─ 기존 DOM을 기준 형제 앞으로 이동
-└─ 다음 VDOM 전체에 실제 DOM 참조 연결 완료
-   ├─ 유지·수정·이동 노드 → 이전 VDOM에서 찾은 실제 DOM 연결
-   ├─ 삽입·교체 노드 → 생성된 실제 DOM 연결
-   └─ VRoot → 실제 영역 컨테이너 연결
+├─ 다음 VDOM 전체에 실제 DOM 참조 연결 완료
+│  ├─ 유지·수정·이동 노드 → 이전 VDOM에서 찾은 실제 DOM 연결
+│  ├─ 삽입·교체 노드 → 생성된 실제 DOM 연결
+│  └─ VRoot → 실제 영역 컨테이너 연결
+└─ assertAllLinked(nextRoot, actualRoot) 전체 연결 확인
 ```
 
 명령은 VDOM 객체를 직접 참조한다. Patch 시작 시 기존 실제 DOM은 이전 VDOM의 `dom`으로 찾으며, 다음 VDOM의 `dom`은 모두 null이다. 부모·기준 형제의 실제 DOM 참조도 Patch에서 해석한다. 이 참조는 편집기나 파싱용 임시 DOM을 가리키지 않는다.
@@ -283,9 +285,9 @@ const propertySchema = {
 ### 9.2 Diff 명령
 
 `diff()`는 아래 명령들의 배열을 반환한다.
-예시의 `"<...>"`는 VDOM 객체 참조를 표시하는 자리표시자다. 실제 실행에서는 문자열이 아닌 객체 직접 참조를 사용한다. 기존 변경 대상은 이전 VDOM으로 찾고, 삽입·교체할 node는 다음 VDOM에 속한다. 다음 VDOM을 참조하는 parent·before의 실제 DOM 연결은 Patch에서 해석한다.
+예시의 `"<...>"`는 VDOM 객체 참조를 표시하는 자리표시자다. 실제 실행에서는 문자열이 아닌 객체 직접 참조를 사용한다. 기존 변경 대상은 이전 VDOM으로 찾고, 삽입·교체할 node는 다음 VDOM에 속한다. 다음 VDOM을 참조하는 parent·before의 실제 DOM 연결은 Patch에서 해석한다. root-level insert·move의 `parent`는 `VRoot`다.
 
-변경 명령 배열과 별개로, Patch는 변경 없는 노드를 포함한 다음 VDOM 전체의 참조 연결을 완성해야 한다. 이를 위한 구체적인 인자·반환 형식은 미확정이며, `p1_decisions.md`의 P1-PATCH-LINK-01을 따른다.
+변경 명령 배열과 별개로, Patch는 변경 없는 노드를 포함한 다음 VDOM 전체의 참조 연결을 완성해야 한다. `applyPatch(prevRoot, nextRoot, changes)`가 완성된 `nextRoot`를 반환하며, 유지 노드 연결은 `p1_decisions.md`의 P1-PATCH-LINK-01 A안을 따른다.
 
 #### replace
 
@@ -354,7 +356,7 @@ const propertySchema = {
 {
   "type": "insert",
   "node": "<새 VDOM 객체>",
-  "parent": "<부모 VDOM 객체>",
+  "parent": "<부모 VDOM 객체: VNode 또는 VRoot>",
   "before": "<기준 형제 VDOM 객체 또는 null>"
 }
 ```
@@ -378,7 +380,7 @@ const propertySchema = {
 {
   "type": "move",
   "target": "<기존 VDOM 객체>",
-  "parent": "<부모 VDOM 객체>",
+  "parent": "<부모 VDOM 객체: VNode 또는 VRoot>",
   "before": "<기준 형제 VDOM 객체 또는 null>"
 }
 ```
