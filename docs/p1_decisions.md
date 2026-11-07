@@ -6,11 +6,13 @@
 - **날짜:** 2026-11-07
 - **결정:** `readEditorHTML(editor: HTMLTextAreaElement): string`으로 편집기 요소를 인자로 전달한다. HTML-01·02는 테스트를 먼저 작성해 실패를 확인한 뒤 구현한다. HTML-03은 테스트만 먼저 작성하고 Snapshot 구현 후 통과를 확인한다. HTML 구현 당시에는 INIT의 연결 대기 주석을 유지했으며, 이후 INIT 변경은 P1-INIT-TDD-01을 따른다.
 - **명세 확인:** HTML-01은 `readEditorHTML(editor)` 단독으로 `<div>\n  <p>A</p>\n</div>`의 실제 줄바꿈·들여쓰기를 그대로 읽는다. HTML-02는 `parseHTML()` 단독으로 `<section class="box"><p>A</p></section><span>B</span>`를 파싱하고 기존 `<p>기존</p>` 화면을 유지한다. HTML-03은 기존 실제 영역·현재 VDOM에 자식이 있는 상태에서 `parseHTML("")` → `createSnapshot()`까지만 실행하고 `{ childNodes: [], dom: null }`과 기존 화면·상태 유지를 검증한다.
-- **검증 시점:** 각 대상 함수 반환 직후. Diff·Patch·렌더링·이력 저장은 호출하지 않는다.
+- **검증 시점:** 각 대상 함수 반환 직후. 대상 함수 실행 중에는 Diff·Patch·렌더링·이력 저장을 호출하지 않는다. History 유지 조건 검증을 위한 사전 상태 준비에서는 아래 mock 초기화를 수행한다.
 - **구현:** `src/app/editor.ts`는 `editor.value`를 그대로 반환한다. `src/vdom/create.ts`의 `parseHTML()`은 화면에 붙이지 않은 `<template>`에 HTML을 파싱하고 `content`를 반환한다. `createSnapshot()`은 이번에 구현하거나 대역으로 대체하지 않는다.
 - **실패 확인:** HTML-01은 구현 파일 부재로 테스트 수집이 중단됐고, HTML-02는 `parseHTML is not a function`으로 호출 시 중단됐다. 둘 다 assertion 실패가 아닌 미구현 오류임을 구분한다. 구현 후 두 테스트의 assertion은 통과했다.
 - **보류:** HTML-03은 `createSnapshot(parseHTML(''))` 호출에서 `createSnapshot is not a function`으로 중단되어 assertion에 도달하지 못한다. 테스트가 존재하지 않는 named export를 참조하므로 타입 검사에도 TS2305가 남는다. Snapshot 구현 시 같은 테스트로 다시 확인하며, 통과를 위해 테스트를 skip하거나 기대값을 바꾸지 않는다.
-- **검증 한계:** HTML-01·02는 실제 화면의 내용·노드 동일성과 편집기 원문 보존을 검증한다. 실제 History 모듈이 아직 없으므로 앱 History·현재 VDOM과의 통합 유지 검증은 수행하지 않았다. HTML-03에는 기존 DOM·현재 VDOM fixture 유지 assertion을 작성했으나 아직 실행되지 않았다.
+- **History mock 검증:** 사용자 요청에 따라 `tests/helpers/html.context.ts`에서 실제 `init()`에 History mock과 초기화용 Snapshot·Diff·Patch 대역을 주입해 `<p>기존</p>` 사전 상태를 준비한다. 준비 단계의 저장 호출 1회를 기준으로, 대상 함수 실행 후 `set` 호출 기록이 추가·변경되지 않고 `move`가 호출되지 않았는지 확인한다. mock의 `get()`이 반환하는 현재 VDOM의 데이터·DOM 참조 유지도 검사한다.
+- **선택 이유:** 앱과 연결되지 않은 별도 mock을 확인하는 대신, 초기화에 실제 전달한 History mock을 사용한다. mock은 조회값과 호출 기록만 제공하며 이력 복사·저장 배열·위치 이동 알고리즘을 구현하지 않는다. 이력 자체의 정확성은 HIST 범위로 남긴다.
+- **검증 한계:** HTML-01·02는 기존 화면·편집기 유지와 History mock의 추가 저장·이동 없음, 현재 VDOM 유지를 검증했다. HTML-03에도 같은 검증을 추가했지만 Snapshot 미구현으로 대상 호출에서 중단되어 assertion은 아직 실행되지 않았다. 실제 History 모듈의 데이터 보존·복원 검증은 HIST 및 통합 테스트에서 수행한다.
 - **최종 실행:** `npm test`에서 HTML은 2개 통과·1개 실패, HTML 구현 당시 전체 결과는 7개 중 4개 통과·3개 실패였다. 이후 INIT mock 전환 결과는 P1-INIT-TDD-01과 테스트 진행표를 따른다. `npm run typecheck`의 오류는 HTML-03의 미구현 `createSnapshot` 참조(TS2305) 1건이다.
 - **영향 범위:** 편집기 읽기, HTML 파싱, HTML-03 테스트 및 관련 명세·진행표. `writeEditorHTML()` 계약은 이번에 확정하지 않는다.
 

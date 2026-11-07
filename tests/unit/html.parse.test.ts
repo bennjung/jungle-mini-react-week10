@@ -1,14 +1,14 @@
 import { afterEach, expect, it } from 'vitest';
 import { parseHTML } from '../../src/vdom/create';
+import { createHTMLContext, expectHistoryUnchanged } from '../helpers/html.context';
 
 afterEach(() => {
   document.body.replaceChildren();
 });
 
 it('HTML-02: 중첩 HTML을 독립된 임시 DOM으로 파싱하고 실제 화면을 유지한다', () => {
-  const actualRoot = document.createElement('div');
-  actualRoot.innerHTML = '<p>기존</p>';
-  document.body.append(actualRoot);
+  const context = createHTMLContext();
+  const { actualRoot } = context.elements;
   const existingParagraph = actualRoot.firstChild;
 
   const parsedRoot = parseHTML('<section class="box"><p>A</p></section><span>B</span>');
@@ -29,4 +29,5 @@ it('HTML-02: 중첩 HTML을 독립된 임시 DOM으로 파싱하고 실제 화�
   expect(section?.firstChild).not.toBe(existingParagraph);
   expect(actualRoot.innerHTML).toBe('<p>기존</p>');
   expect(actualRoot.firstChild).toBe(existingParagraph);
+  expectHistoryUnchanged(context);
 });
