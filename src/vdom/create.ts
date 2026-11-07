@@ -1,5 +1,11 @@
 import type { VRoot } from './types';
 
+export function parseHTML(html: string): DocumentFragment {
+  const template = document.createElement('template');
+  template.innerHTML = html;
+  return template.content;
+}
+
 /**
  * 실제 영역 컨테이너에 대응하는 빈 논리적 루트를 만든다.
  * 초기화 시 비교 기준으로 사용하며, 루트의 dom은 실제 컨테이너를 가리킨다.
